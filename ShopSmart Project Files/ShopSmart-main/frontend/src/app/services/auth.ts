@@ -1,0 +1,278 @@
+import { Injectable, computed, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable, tap } from 'rxjs';
+import { environment } from './environment';
+
+const AUTH_KEY = 'shopsmart_auth_user';
+
+export type UserRole = 'user' | 'shop' | 'admin';
+
+export const USER_ROLES: UserRole[] = ['user', 'shop', 'admin'];
+
+export interface AuthUser {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  shopApprovalStatus?: 'pending' | 'approved' | 'rejected' | 'suspended';
+  profile?: {
+    gender?: string;
+    dateOfBirth?: string;
+  };
+  shopDetails?: {
+    shopName?: string;
+    ownerName?: string;
+    businessType?: string;
+    gstNumber?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    website?: string;
+  };
+  token: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+  role: UserRole;
+}
+
+export interface UserRegisterPayload {
+  role: 'user';
+  fullName: string;
+  email: string;
+  phone: string;
+  city: string;
+  state: string;
+  country: string;
+  gender?: string;
+  dateOfBirth?: string;
+  password: string;
+}
+
+export interface ShopRegisterPayload {
+  role: 'shop';
+  shopName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  businessType: string;
+  gstNumber?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  website?: string;
+  password: string;
+}
+
+export type RegisterPayload = UserRegisterPayload | ShopRegisterPayload;
+
+export interface UserProfile {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: UserRole;
+  profile?: {
+    gender?: string;
+    dateOfBirth?: string;
+  };
+  shopDetails?: AuthUser['shopDetails'];
+}
+
+export interface UpdatePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface PendingShop {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  shopApprovalStatus: 'pending' | 'approved' | 'rejected' | 'suspended';
+  createdAt: string;
+  shopDetails?: AuthUser['shopDetails'];
+}
+
+export interface AdminShop extends PendingShop {
+  totalProducts: number;
+  totalSales: number;
+  totalOrders: number;
+}
+
+export interface AdminUser {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  isBlocked: boolean;
+  createdAt: string;
+}
+
+export interface DashboardAnalytics {
+  totalUsers: number;
+  totalShops: number;
+  totalOrders: number;
+  totalRevenue: number;
+}
+
+export interface MonthlyRevenueData {
+  month: string;
+  revenue: number;
+}
+
+@Injectable({
+  providedIn: 'root'
+})
+export class AuthService {
+  private readonly userSignal = signal<AuthUser | null>(this.readUserFromStorage());
+
+  readonly user = this.userSignal.asReadonly();
+  readonly isLoggedIn = computed(() => !!this.userSignal()?.token);
+  readonly role = computed<UserRole | null>(() => this.userSignal()?.role ?? null);
+
+  constructor(private http: HttpClient) {}
+
+  login(payload: LoginPayload): Observable<AuthUser> {
+    return this.http
+      .post<AuthUser>(`${environment.apiUrl}/users/login`, payload)
+      .pipe(tap((user) => this.setSession(user)));
+  }
+
+  register(payload: RegisterPayload): Observable<AuthUser> {
+    return this.http
+      .post<AuthUser>(`${environment.apiUrl}/users/register`, payload)
+      .pipe(tap((user) => this.setSession(user)));
+  }
+
+  getProfile(): Observable<UserProfile> {
+    return this.http.get<UserProfile>(`${environment.apiUrl}/users/profile`);
+  }
+
+  updateProfile(payload: Partial<UserProfile> & { shopDetails?: AuthUser['shopDetails'] }): Observable<UserProfile> {
+    return this.http
+      .put<UserProfile>(`${environment.apiUrl}/users/profile`, payload)
+      .pipe(tap((profile) => this.syncUserFromProfile(profile)));
+  }
+
+  updatePassword(payload: UpdatePasswordPayload): Observable<{ message: string }> {
+    return this.http.put<{ message: string }>(`${environment.apiUrl}/users/profile/password`, payload);
+  }
+
+  getPendingShops(): Observable<PendingShop[]> {
+    return this.http.get<PendingShop[]>(`${environment.apiUrl}/users/shops/pending`);
+  }
+
+  updateShopApprovalStatus(shopId: string, status: 'approved' | 'rejected' | 'suspended' | 'pending'): Observable<PendingShop> {
+    return this.http.put<PendingShop>(`${environment.apiUrl}/users/shops/${shopId}/approval`, { status });
+  }
+
+  getAllShops(): Observable<AdminShop[]> {
+    return this.http.get<AdminShop[]>(`${environment.apiUrl}/users/shops`);
+  }
+
+  updateShopStatus(shopId: string, status: 'pending' | 'approved' | 'rejected' | 'suspended'): Observable<PendingShop> {
+    return this.http.put<PendingShop>(`${environment.apiUrl}/users/shops/${shopId}/status`, { status });
+  }
+
+  deleteShop(shopId: string): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${environment.apiUrl}/users/shops/${shopId}`);
+  }
+
+  getAllUsers(): Observable<AdminUser[]> {
+    return this.http.get<AdminUser[]>(`${environment.apiUrl}/users/admin/users`);
+  }
+
+  updateUserBlockStatus(userId: string, isBlocked: boolean): Observable<AdminUser> {
+    return this.http.put<AdminUser>(`${environment.apiUrl}/users/admin/users/${userId}/block`, { isBlocked });
+  }
+
+  deleteUser(userId: string): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${environment.apiUrl}/users/admin/users/${userId}`);
+  }
+
+  getDashboardAnalytics(): Observable<DashboardAnalytics> {
+    return this.http.get<DashboardAnalytics>(`${environment.apiUrl}/users/admin/analytics`);
+  }
+
+  getMonthlyRevenueChart(): Observable<MonthlyRevenueData[]> {
+    return this.http.get<MonthlyRevenueData[]>(`${environment.apiUrl}/users/admin/revenue-chart`);
+  }
+
+  logout(): void {
+    this.userSignal.set(null);
+    localStorage.removeItem(AUTH_KEY);
+  }
+
+  getToken(): string | null {
+    return this.userSignal()?.token ?? null;
+  }
+
+  isRole(role: UserRole): boolean {
+    return this.userSignal()?.role === role;
+  }
+
+  isShopApproved(): boolean {
+    const user = this.userSignal();
+    if (!user || user.role !== 'shop') {
+      return true;
+    }
+    return user.shopApprovalStatus === 'approved';
+  }
+
+  getDefaultRouteByRole(role?: UserRole | null): string {
+    const resolvedRole = role ?? this.userSignal()?.role;
+
+    if (resolvedRole === 'admin') {
+      return '/admin/dashboard';
+    }
+    if (resolvedRole === 'shop') {
+      return '/shop/dashboard';
+    }
+    return '/';
+  }
+
+  private setSession(user: AuthUser): void {
+    this.userSignal.set(user);
+    localStorage.setItem(AUTH_KEY, JSON.stringify(user));
+  }
+
+  private syncUserFromProfile(profile: UserProfile): void {
+    const current = this.userSignal();
+    if (!current) {
+      return;
+    }
+
+    this.setSession({
+      ...current,
+      name: profile.name,
+      phone: profile.phone,
+      role: profile.role,
+      profile: profile.profile,
+      shopDetails: profile.shopDetails
+    });
+  }
+
+  private readUserFromStorage(): AuthUser | null {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw) as AuthUser;
+    } catch {
+      localStorage.removeItem(AUTH_KEY);
+      return null;
+    }
+  }
+}

@@ -1,0 +1,56 @@
+<section class="catalog-header">
+	<h2 class="h4 mb-0">Product Catalog</h2>
+	<div class="catalog-filters">
+		<input
+			class="form-control"
+			type="text"
+			[value]="search"
+			(input)="onSearch($any($event.target).value)"
+			placeholder="Search products"
+		/>
+		<select class="form-select" [value]="selectedCategory" (change)="onCategoryChange($any($event.target).value)">
+			<option value="">All Categories</option>
+			@for (category of categories; track category) {
+				<option [value]="category">{{ category }}</option>
+			}
+		</select>
+	</div>
+</section>
+
+@if (loading) {
+	<p>Loading products...</p>
+}
+
+@if (!loading && error) {
+	<div class="alert alert-danger" role="alert">{{ error }}</div>
+}
+
+@if (!loading && !error && filteredProducts.length === 0) {
+	<p>No products found.</p>
+}
+
+@if (!loading && !error && filteredProducts.length > 0) {
+	<div class="catalog-grid">
+		@for (item of filteredProducts; track productId(item)) {
+			<article class="catalog-card">
+				@if (item.image) {
+					<img [src]="item.image" class="product-image" [alt]="item.title" />
+				}
+				<div class="card-content">
+					<h3 class="h6 mb-1">{{ item.title }}</h3>
+					<p class="text-muted small mb-2">{{ item.category || 'General' }}</p>
+					<p class="desc mb-2">{{ item.description }}</p>
+					<div class="rating-row mb-2">
+						<span>⭐ {{ item.rating || 0 | number: '1.1-1' }}</span>
+						<span class="small text-muted">({{ item.numReviews || 0 }} reviews)</span>
+					</div>
+					<p class="fw-semibold mb-3">₹{{ item.price }}</p>
+					<div class="mt-auto d-flex gap-2">
+						<a class="btn btn-outline-secondary btn-sm" [routerLink]="['/products', productId(item)]">View Details</a>
+						<button class="btn btn-dark btn-sm" type="button" (click)="addToCart(item)">Add to cart</button>
+					</div>
+				</div>
+			</article>
+		}
+	</div>
+}
