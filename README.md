@@ -338,9 +338,6 @@ npm start
 PORT=5000
 NODE_ENV=development
 
-# Database
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/shopsmart
-
 # JWT
 JWT_SECRET=your-secure-jwt-secret
 JWT_EXPIRY=7d
@@ -1603,3 +1600,4 @@ Built with modern web technologies and best practices. Special thanks to:
 **Last Updated**: February 21, 2026
 **Maintained By**: ShopSmart Development Team
 **Repository**: [Link to repository]
+"# smart-shop" 
